@@ -1,0 +1,109 @@
+DesignWare PWM: normal polarity, and the two DC ends. The timer holds the low
+period in LD_CNT and the high one in LD_CNT2, so normal polarity is the same
+registers swapped; a backlight wired active-high needs it. No high period at
+all (pwm-backlight at 0 or powered off) stops the timer, which drives low; no
+low period at all gets one tick. Both were -ERANGE, which pwm-backlight
+ignores, so the light kept its old level.
+
+--- a/drivers/pwm/pwm-dwc-core.c
++++ b/drivers/pwm/pwm-dwc-core.c
+@@ -39,26 +39,37 @@
+ 				     struct pwm_device *pwm,
+ 				     const struct pwm_state *state)
+ {
++	u64 low_ns = state->duty_cycle;
++	u64 high_ns = state->period - state->duty_cycle;
+ 	u64 tmp;
+ 	u32 ctrl;
+ 	u32 high;
+ 	u32 low;
+ 
++	/* The hardware has no polarity bit: normal polarity's duty is the high period. */
++	if (state->polarity == PWM_POLARITY_NORMAL)
++		swap(low_ns, high_ns);
++
+ 	/*
+ 	 * Calculate width of low and high period in terms of input clock
+ 	 * periods and check are the result within HW limits between 1 and
+-	 * 2^32 periods.
++	 * 2^32 periods. A stopped timer drives low, which is what no high
++	 * period at all asks for; no low period at all gets the shortest one.
+ 	 */
+-	tmp = DIV_ROUND_CLOSEST_ULL(state->duty_cycle, dwc->clk_ns);
+-	if (tmp < 1 || tmp > (1ULL << 32))
++	tmp = DIV_ROUND_CLOSEST_ULL(high_ns, dwc->clk_ns);
++	if (tmp > (1ULL << 32))
+ 		return -ERANGE;
+-	low = tmp - 1;
++	if (tmp < 1) {
++		/* The core still records the PWM as enabled: stopped is this timer's 0 %. */
++		__dwc_pwm_set_enable(dwc, pwm->hwpwm, false);
++		return 0;
++	}
++	high = tmp - 1;
+ 
+-	tmp = DIV_ROUND_CLOSEST_ULL(state->period - state->duty_cycle,
+-				    dwc->clk_ns);
+-	if (tmp < 1 || tmp > (1ULL << 32))
++	tmp = DIV_ROUND_CLOSEST_ULL(low_ns, dwc->clk_ns);
++	if (tmp > (1ULL << 32))
+ 		return -ERANGE;
+-	high = tmp - 1;
++	low = max(tmp, 1ULL) - 1;
+ 
+ 	/*
+ 	 * Specification says timer usage flow is to disable timer, then
+@@ -100,12 +111,10 @@
+ {
+ 	struct dwc_pwm *dwc = to_dwc_pwm(chip);
+ 
+-	if (state->polarity != PWM_POLARITY_INVERSED)
+-		return -EINVAL;
+-
+ 	if (state->enabled) {
+ 		if (!pwm->state.enabled)
+ 			pm_runtime_get_sync(pwmchip_parent(chip));
++		dwc->polarity[pwm->hwpwm] = state->polarity;
+ 		return __dwc_pwm_configure_timer(dwc, pwm, state);
+ 	} else {
+ 		if (pwm->state.enabled) {
+@@ -145,7 +154,9 @@
+ 		period = duty * 2;
+ 	}
+ 
+-	state->polarity = PWM_POLARITY_INVERSED;
++	state->polarity = dwc->polarity[pwm->hwpwm];
++	if (state->polarity == PWM_POLARITY_NORMAL)
++		duty = period - duty;
+ 	state->period = period;
+ 	state->duty_cycle = duty;
+ 
+@@ -163,6 +174,7 @@
+ {
+ 	struct pwm_chip *chip;
+ 	struct dwc_pwm *dwc;
++	unsigned int i;
+ 
+ 	chip = devm_pwmchip_alloc(dev, DWC_TIMERS_TOTAL, sizeof(*dwc));
+ 	if (IS_ERR(chip))
+@@ -171,6 +183,9 @@
+ 
+ 	dwc->clk_ns = 10;
+ 	chip->ops = &dwc_pwm_ops;
++	/* What the output does before any apply(): the low period first. */
++	for (i = 0; i < DWC_TIMERS_TOTAL; i++)
++		dwc->polarity[i] = PWM_POLARITY_INVERSED;
+ 
+ 	return chip;
+ }
+--- a/drivers/pwm/pwm-dwc.h
++++ b/drivers/pwm/pwm-dwc.h
+@@ -53,6 +53,8 @@
+ struct dwc_pwm {
+ 	void __iomem *base;
+ 	unsigned int clk_ns;
++	/* Software state: the hardware has no polarity bit to read back. */
++	enum pwm_polarity polarity[DWC_TIMERS_TOTAL];
+ 	struct dwc_pwm_ctx ctx[DWC_TIMERS_TOTAL];
+ };
+ 

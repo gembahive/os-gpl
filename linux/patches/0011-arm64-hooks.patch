@@ -1,0 +1,74 @@
+AArch64 hooks: ARCH_AXERA, CMDLINE_EXTEND and the early_ram entry marker.
+
+--- a/arch/arm64/Kconfig
++++ b/arch/arm64/Kconfig
+@@ -2458,6 +2458,13 @@
+ 	  the boot loader doesn't provide any, the default kernel command
+ 	  string provided in CMDLINE will be used.
+ 
++config CMDLINE_EXTEND
++	bool "Extend bootloader kernel arguments"
++	help
++	  Appends CMDLINE to the boot loader's command line (drivers/of/fdt.c).
++	  Only the generic parse sees it; the early ID-register overrides
++	  (arch/arm64/kernel/pi) read the boot loader's part alone.
++
+ config CMDLINE_FORCE
+ 	bool "Always use the default kernel command string"
+ 	help
+--- a/arch/arm64/Kconfig.platforms
++++ b/arch/arm64/Kconfig.platforms
+@@ -47,6 +47,11 @@
+ 	help
+ 	   This enables support for the ARMv8 based ARTPEC SoC Family.
+ 
++config ARCH_AXERA
++	bool "Axera AX620E"
++	help
++	  Axera AX620E family (AX620Q) in 64-bit mode, under TF-A's BL31.
++
+ config ARCH_AXIADO
+ 	bool "Axiado SoC Family"
+ 	select GPIOLIB
+--- a/arch/arm64/kernel/head.S
++++ b/arch/arm64/kernel/head.S
+@@ -85,6 +85,39 @@
+ SYM_CODE_START(primary_entry)
+ 	bl	record_mmu_state
+ 	bl	preserve_boot_args
++#ifdef CONFIG_SERIAL_EARLY_RAM
++	/*
++	 * x19 == 0: record_mmu_state saw the MMU or the D-cache off; BL31 enters
++	 * with the MMU off, so 0x45f50000 is physical. Boot args are saved and
++	 * x0-x4 are free here; every store is aligned (Device memory).
++	 */
++	cbnz	x19, .Lram_entry_done
++	mov	x0, #0x45f50000
++	str	wzr, [x0]
++	dsb	sy
++	adr	x1, .Lram_entry_text
++	mov	x2, #(.Lram_entry_end - .Lram_entry_text)
++	add	x3, x0, #12
++.Lram_entry_copy:
++	ldrb	w4, [x1], #1
++	strb	w4, [x3], #1
++	subs	x2, x2, #1
++	b.ne	.Lram_entry_copy
++	mov	w2, #(.Lram_entry_end - .Lram_entry_text)
++	str	w2, [x0, #4]
++	str	w2, [x0, #8]
++	dsb	sy
++	mov	w2, #0x4244
++	movk	w2, #0x4347, lsl #16
++	str	w2, [x0]
++	dsb	sy
++	b	.Lram_entry_done
++.Lram_entry_text:
++	.ascii	"LINUX ENTRY\n"
++.Lram_entry_end:
++	.align	2
++.Lram_entry_done:
++#endif
+ 
+ 	adrp	x1, early_init_stack
+ 	mov	sp, x1

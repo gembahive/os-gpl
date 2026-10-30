@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config DRM_ACCEL_AX620E_NPU
+	tristate "Axera AX620E NPU"
+	depends on DRM_ACCEL && OF
+	depends on ARCH_AXERA || COMPILE_TEST
+	select DRM_GEM_DMA_HELPER
+	help
+	  The AX620E family's neural network processor as one accel device,
+	  run as a single NPU with all of its on-chip memory. Models load
+	  only from /lib/firmware/npu/; the kernel builds every command list.

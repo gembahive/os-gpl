@@ -1,0 +1,48 @@
+FunctionFS: no HID class without the HID function. Userspace writes its own
+descriptors, so without this a FunctionFS instance could declare a HID
+interface (or an interface association of HID class) and offer the host a
+keyboard or mouse that USB_F_HID being off was meant to rule out.
+
+--- a/drivers/usb/gadget/function/f_fs.c
++++ b/drivers/usb/gadget/function/f_fs.c
+@@ -2565,6 +2565,9 @@
+ 		pr_vdebug("interface descriptor\n");
+ 		if (length != sizeof *ds)
+ 			goto inv_length;
++		if (!IS_ENABLED(CONFIG_USB_F_HID) &&
++		    ds->bInterfaceClass == USB_INTERFACE_CLASS_HID)
++			goto no_hid;
+ 
+ 		__entity(INTERFACE, ds->bInterfaceNumber);
+ 		if (ds->iInterface)
+@@ -2587,6 +2590,8 @@
+ 	case USB_TYPE_CLASS | 0x01:
+ 		if (*current_class == USB_INTERFACE_CLASS_HID) {
+ 			pr_vdebug("hid descriptor\n");
++			if (!IS_ENABLED(CONFIG_USB_F_HID))
++				goto no_hid;
+ 			if (length != sizeof(struct hid_descriptor))
+ 				goto inv_length;
+ 			break;
+@@ -2617,6 +2622,9 @@
+ 		pr_vdebug("interface association descriptor\n");
+ 		if (length != sizeof *ds)
+ 			goto inv_length;
++		if (!IS_ENABLED(CONFIG_USB_F_HID) &&
++		    ds->bFunctionClass == USB_INTERFACE_CLASS_HID)
++			goto no_hid;
+ 		if (ds->iFunction)
+ 			__entity(STRING, ds->iFunction);
+ 	}
+@@ -2645,6 +2653,11 @@
+ inv_length:
+ 		pr_vdebug("invalid length: %d (descriptor %d)\n",
+ 			  _ds->bLength, _ds->bDescriptorType);
++		return -EINVAL;
++
++no_hid:
++		/* Without the HID function no HID interface reaches the host. */
++		pr_vdebug("HID class without CONFIG_USB_F_HID\n");
+ 		return -EINVAL;
+ 	}
+ 

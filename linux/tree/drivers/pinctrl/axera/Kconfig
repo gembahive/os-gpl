@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0
+
+# Built in: pads must be muxed before the peripherals that use them probe.
+config PINCTRL_AX620E
+	bool "Axera AX620E pin controller"
+	depends on ARCH_AXERA || COMPILE_TEST
+	depends on OF
+	default ARCH_AXERA
+	select GENERIC_PINCTRL_GROUPS
+	select GENERIC_PINMUX_FUNCTIONS
+	select GENERIC_PINCONF
+	help
+	  Pin multiplexing and configuration for the Axera AX620E family
+	  (AX620Q, AX630C).

@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright (c) 2026, GembaHive, Inc.
+ */
+/*
+ * Axera AX620Q chip file; boards include this, not ax620e.dtsi.
+ */
+
+#include "ax620e.dtsi"
+
+/ {
+	compatible = "axera,ax620q", "axera,ax620e";
+};

@@ -1,0 +1,223 @@
+Hooks tree/ into the build: a Kconfig source and Kbuild line per directory.
+
+--- a/drivers/accel/Kconfig
++++ b/drivers/accel/Kconfig
+@@ -25,6 +25,7 @@
+ 	  and debugfs).
+
+ source "drivers/accel/amdxdna/Kconfig"
++source "drivers/accel/ax620e-npu/Kconfig"
+ source "drivers/accel/habanalabs/Kconfig"
+ source "drivers/accel/ivpu/Kconfig"
+ source "drivers/accel/qaic/Kconfig"
+--- a/drivers/accel/Makefile
++++ b/drivers/accel/Makefile
+@@ -1,6 +1,7 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+
+ obj-$(CONFIG_DRM_ACCEL_AMDXDNA)		+= amdxdna/
++obj-$(CONFIG_DRM_ACCEL_AX620E_NPU)	+= ax620e-npu/
+ obj-$(CONFIG_DRM_ACCEL_HABANALABS)	+= habanalabs/
+ obj-$(CONFIG_DRM_ACCEL_IVPU)		+= ivpu/
+ obj-$(CONFIG_DRM_ACCEL_QAIC)		+= qaic/
+--- a/drivers/clk/Kconfig
++++ b/drivers/clk/Kconfig
+@@ -513,6 +513,7 @@
+ 
+ source "drivers/clk/actions/Kconfig"
+ source "drivers/clk/analogbits/Kconfig"
++source "drivers/clk/axera/Kconfig"
+ source "drivers/clk/baikal-t1/Kconfig"
+ source "drivers/clk/bcm/Kconfig"
+ source "drivers/clk/hisilicon/Kconfig"
+--- a/drivers/clk/Makefile
++++ b/drivers/clk/Makefile
+@@ -115,6 +115,7 @@
+ obj-y					+= actions/
+ obj-y					+= analogbits/
+ obj-$(CONFIG_COMMON_CLK_AT91)		+= at91/
++obj-$(CONFIG_CLK_AX620E)		+= axera/
+ obj-$(CONFIG_ARCH_ARTPEC)		+= axis/
+ obj-$(CONFIG_ARC_PLAT_AXS10X)		+= axs10x/
+ obj-$(CONFIG_CLK_BAIKAL_T1)		+= baikal-t1/
+--- a/drivers/watchdog/Kconfig
++++ b/drivers/watchdog/Kconfig
+@@ -606,6 +606,13 @@
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called dw_wdt.
+ 
++config AX620E_WATCHDOG
++	bool "Axera AX620E watchdog"
++	depends on ARCH_AXERA || COMPILE_TEST
++	select WATCHDOG_CORE
++	help
++	  The watchdog of the Axera AX620E family; also its reboot.
++
+ config EP93XX_WATCHDOG
+ 	tristate "EP93xx Watchdog"
+ 	depends on ARCH_EP93XX || COMPILE_TEST
+--- a/drivers/watchdog/Makefile
++++ b/drivers/watchdog/Makefile
+@@ -55,6 +55,7 @@
+ obj-$(CONFIG_SA1100_WATCHDOG) += sa1100_wdt.o
+ obj-$(CONFIG_SAMA5D4_WATCHDOG) += sama5d4_wdt.o
+ obj-$(CONFIG_DW_WATCHDOG) += dw_wdt.o
++obj-$(CONFIG_AX620E_WATCHDOG) += ax620e_wdt.o
+ obj-$(CONFIG_EP93XX_WATCHDOG) += ep93xx_wdt.o
+ obj-$(CONFIG_PNX4008_WATCHDOG) += pnx4008_wdt.o
+ obj-$(CONFIG_DAVINCI_WATCHDOG) += davinci_wdt.o
+--- a/drivers/usb/dwc3/Kconfig
++++ b/drivers/usb/dwc3/Kconfig
+@@ -200,4 +200,12 @@
+ 	  the dwc3 child node in the device tree.
+ 	  Say 'Y' or 'M' here if your platform integrates DWC3 in a similar way.
+ 
++config USB_DWC3_AX620E
++	bool "Axera AX620E DWC3 glue"
++	depends on OF && (ARCH_AXERA || COMPILE_TEST)
++	select MFD_SYSCON
++	default USB_DWC3
++	help
++	  The DWC3 USB 2.0 controller of the Axera AX620E family.
++
+ endif
+--- a/drivers/usb/dwc3/Makefile
++++ b/drivers/usb/dwc3/Makefile
+@@ -58,3 +58,4 @@
+ obj-$(CONFIG_USB_DWC3_OCTEON)		+= dwc3-octeon.o
+ obj-$(CONFIG_USB_DWC3_RTK)		+= dwc3-rtk.o
+ obj-$(CONFIG_USB_DWC3_GENERIC_PLAT)	+= dwc3-generic-plat.o
++obj-$(CONFIG_USB_DWC3_AX620E)		+= dwc3-ax620e.o
+--- a/drivers/gpio/Kconfig
++++ b/drivers/gpio/Kconfig
+@@ -187,6 +187,14 @@
+ 	select GPIOLIB_IRQCHIP
+ 	help
+ 	  Say Y here to support Aspeed AST2500 SGPIO functionality.
++
++config GPIO_AX620E
++	bool "Axera AX620E GPIO support"
++	depends on ARCH_AXERA || COMPILE_TEST
++	default ARCH_AXERA
++	select GPIOLIB_IRQCHIP
++	help
++	  The four GPIO controllers of the Axera AX620E family.
+ 
+ config GPIO_ATH79
+ 	tristate "Atheros AR71XX/AR724X/AR913X GPIO support"
+--- a/drivers/gpio/Makefile
++++ b/drivers/gpio/Makefile
+@@ -41,6 +41,7 @@
+ obj-$(CONFIG_GPIO_ASPEED)		+= gpio-aspeed.o
+ obj-$(CONFIG_GPIO_ASPEED_SGPIO)		+= gpio-aspeed-sgpio.o
+ obj-$(CONFIG_GPIO_ATH79)		+= gpio-ath79.o
++obj-$(CONFIG_GPIO_AX620E)		+= gpio-ax620e.o
+ obj-$(CONFIG_GPIO_BCM_KONA)		+= gpio-bcm-kona.o
+ obj-$(CONFIG_GPIO_BCM_XGS_IPROC)	+= gpio-xgs-iproc.o
+ obj-$(CONFIG_GPIO_BD71815)		+= gpio-bd71815.o
+--- a/drivers/pinctrl/Kconfig
++++ b/drivers/pinctrl/Kconfig
+@@ -685,6 +685,7 @@
+ 
+ source "drivers/pinctrl/actions/Kconfig"
+ source "drivers/pinctrl/aspeed/Kconfig"
++source "drivers/pinctrl/axera/Kconfig"
+ source "drivers/pinctrl/bcm/Kconfig"
+ source "drivers/pinctrl/berlin/Kconfig"
+ source "drivers/pinctrl/cirrus/Kconfig"
+--- a/drivers/pinctrl/Makefile
++++ b/drivers/pinctrl/Makefile
+@@ -66,6 +66,7 @@
+ 
+ obj-y				+= actions/
+ obj-$(CONFIG_ARCH_ASPEED)	+= aspeed/
++obj-y				+= axera/
+ obj-y				+= bcm/
+ obj-$(CONFIG_PINCTRL_BERLIN)	+= berlin/
+ obj-y				+= cirrus/
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -9,6 +9,16 @@
+ 	tristate
+ 	depends on INPUT
+ 
++config AX620E_CHIPKEY
++	bool "Keys bound to the Axera AX620E's hardware unique key"
++	depends on (ARCH_AXERA || COMPILE_TEST) && OF && HAS_IOMEM && TEE=y
++	select FW_LOADER
++	select HW_RANDOM
++	select MFD_SYSCON
++	help
++	  /dev/chipkey: 32-byte keys derived inside the AX620E's EIP-130
++	  engine from its hardware unique key, and /dev/hwrng from its RNG.
++
+ config AD525X_DPOT
+ 	tristate "Analog Devices Digital Potentiometers"
+ 	depends on (I2C || SPI) && SYSFS
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -5,6 +5,7 @@
+ 
+ obj-$(CONFIG_IBM_ASM)		+= ibmasm/
+ obj-$(CONFIG_IBMVMC)		+= ibmvmc.o
++obj-$(CONFIG_AX620E_CHIPKEY)	+= ax620e-chipkey.o
+ obj-$(CONFIG_AD525X_DPOT)	+= ad525x_dpot.o
+ obj-$(CONFIG_AD525X_DPOT_I2C)	+= ad525x_dpot-i2c.o
+ obj-$(CONFIG_AD525X_DPOT_SPI)	+= ad525x_dpot-spi.o
+--- a/drivers/media/platform/Kconfig
++++ b/drivers/media/platform/Kconfig
+@@ -67,6 +67,7 @@
+ source "drivers/media/platform/amphion/Kconfig"
+ source "drivers/media/platform/aspeed/Kconfig"
+ source "drivers/media/platform/atmel/Kconfig"
++source "drivers/media/platform/axera/Kconfig"
+ source "drivers/media/platform/broadcom/Kconfig"
+ source "drivers/media/platform/cadence/Kconfig"
+ source "drivers/media/platform/chips-media/Kconfig"
+--- a/drivers/media/platform/Makefile
++++ b/drivers/media/platform/Makefile
+@@ -10,6 +10,7 @@
+ obj-y += amphion/
+ obj-y += aspeed/
+ obj-y += atmel/
++obj-y += axera/
+ obj-y += broadcom/
+ obj-y += cadence/
+ obj-y += chips-media/
+--- a/drivers/pwm/Kconfig
++++ b/drivers/pwm/Kconfig
+@@ -239,6 +239,14 @@
+ 	  To compile this driver as a module, choose M here: the module
+ 	  will be called pwm-dwc.
+ 
++config PWM_DWC_OF
++	tristate "DesignWare PWM Controller (DT)"
++	depends on HAS_IOMEM && OF
++	select PWM_DWC_CORE
++	help
++	  PWM driver for Synopsys DWC PWM Controller (DesignWare APB timers)
++	  described in the device tree, as on the Axera AX620E family.
++
+ config PWM_EP93XX
+ 	tristate "Cirrus Logic EP93xx PWM support"
+ 	depends on ARCH_EP93XX || COMPILE_TEST
+--- a/drivers/pwm/Makefile
++++ b/drivers/pwm/Makefile
+@@ -19,6 +19,7 @@
+ obj-$(CONFIG_PWM_CROS_EC)	+= pwm-cros-ec.o
+ obj-$(CONFIG_PWM_DWC_CORE)	+= pwm-dwc-core.o
+ obj-$(CONFIG_PWM_DWC)		+= pwm-dwc.o
++obj-$(CONFIG_PWM_DWC_OF)	+= pwm-dwc-of.o
+ obj-$(CONFIG_PWM_EP93XX)	+= pwm-ep93xx.o
+ obj-$(CONFIG_PWM_FSL_FTM)	+= pwm-fsl-ftm.o
+ obj-$(CONFIG_PWM_GPIO)		+= pwm-gpio.o
+--- a/drivers/soc/Makefile
++++ b/drivers/soc/Makefile
+@@ -6,6 +6,7 @@
+ obj-y				+= apple/
+ obj-y				+= aspeed/
+ obj-$(CONFIG_ARCH_AT91)		+= atmel/
++obj-$(CONFIG_ARCH_AXERA)	+= axera/
+ obj-y				+= bcm/
+ obj-$(CONFIG_ARCH_CANAAN)	+= canaan/
+ obj-$(CONFIG_EP93XX_SOC)        += cirrus/

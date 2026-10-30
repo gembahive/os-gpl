@@ -1,0 +1,19 @@
+mipi_dbi: no reset on a conditional power-on of a write-only controller. It
+cannot report its power mode, so the bootloader may have left it on, showing
+an image. A reset turns the display off until the init sequence ends; without
+one, the controller keeps showing its frame memory while the driver
+reinitialises it.
+
+--- a/drivers/gpu/drm/drm_mipi_dbi.c
++++ b/drivers/gpu/drm/drm_mipi_dbi.c
+@@ -778,6 +778,10 @@
+ 	if (cond && mipi_dbi_display_is_on(dbi))
+ 		return 1;
+ 
++	/* Possibly on: a reset would turn the display off until reinitialised. */
++	if (cond && !dbi->read_commands)
++		return 0;
++
+ 	mipi_dbi_hw_reset(dbi);
+ 	ret = mipi_dbi_command(dbi, MIPI_DCS_SOFT_RESET);
+ 	if (ret) {

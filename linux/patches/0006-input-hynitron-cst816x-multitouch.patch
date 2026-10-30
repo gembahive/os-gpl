@@ -1,0 +1,72 @@
+Hynitron CST816x: report the contact as a multitouch slot (protocol B) and
+take the standard touchscreen properties (size, inversion, swap). Single-touch
+readers still get ABS_X/Y and BTN_TOUCH through pointer emulation.
+
+--- a/drivers/input/touchscreen/hynitron-cst816x.c
++++ b/drivers/input/touchscreen/hynitron-cst816x.c
+@@ -11,6 +11,8 @@
+ #include <linux/gpio/consumer.h>
+ #include <linux/i2c.h>
+ #include <linux/input.h>
++#include <linux/input/mt.h>
++#include <linux/input/touchscreen.h>
+ #include <linux/unaligned.h>
+ #include <linux/interrupt.h>
+ #include <linux/module.h>
+@@ -29,6 +31,7 @@
+ 	struct i2c_client *client;
+ 	struct gpio_desc *reset;
+ 	struct input_dev *input;
++	struct touchscreen_properties prop;
+ 	unsigned int keycode[CST816X_NUM_KEYS];
+ 	unsigned int keycodemax;
+ };
+@@ -129,6 +132,8 @@
+ 
+ static int cst816x_register_input(struct cst816x_priv *priv)
+ {
++	int error;
++
+ 	priv->input = devm_input_allocate_device(&priv->client->dev);
+ 	if (!priv->input)
+ 		return -ENOMEM;
+@@ -139,9 +144,13 @@
+ 
+ 	input_set_drvdata(priv->input, priv);
+ 
+-	input_set_abs_params(priv->input, ABS_X, 0, 240, 0, 0);
+-	input_set_abs_params(priv->input, ABS_Y, 0, 240, 0, 0);
+-	input_set_capability(priv->input, EV_KEY, BTN_TOUCH);
++	/* One contact, as a multitouch slot; ABS_X/Y and BTN_TOUCH follow it. */
++	input_set_abs_params(priv->input, ABS_MT_POSITION_X, 0, 240, 0, 0);
++	input_set_abs_params(priv->input, ABS_MT_POSITION_Y, 0, 240, 0, 0);
++	touchscreen_parse_properties(priv->input, true, &priv->prop);
++	error = input_mt_init_slots(priv->input, 1, INPUT_MT_DIRECT);
++	if (error)
++		return error;
+ 
+ 	priv->input->keycode = priv->keycode;
+ 	priv->input->keycodesize = sizeof(priv->keycode[0]);
+@@ -173,16 +182,18 @@
+ 	if (!cst816x_process_touch(priv, &tch))
+ 		return IRQ_HANDLED;
+ 
+-	input_report_abs(priv->input, ABS_X, tch.abs_x);
+-	input_report_abs(priv->input, ABS_Y, tch.abs_y);
++	input_mt_slot(priv->input, 0);
++	input_mt_report_slot_state(priv->input, MT_TOOL_FINGER, tch.active);
++	if (tch.active)
++		touchscreen_report_pos(priv->input, &priv->prop,
++				       tch.abs_x, tch.abs_y, true);
+ 
+ 	if (tch.gest)
+ 		input_report_key(priv->input,
+ 				 priv->keycode[cst816x_gest_idx(tch.gest)],
+ 				 tch.active);
+ 
+-	input_report_key(priv->input, BTN_TOUCH, tch.active);
+-
++	input_mt_sync_frame(priv->input);
+ 	input_sync(priv->input);
+ 
+ 	return IRQ_HANDLED;

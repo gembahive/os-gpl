@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0
+# Built in: the boot storage depends on these controllers.
+config CLK_AX620E
+	bool "Axera AX620E clock and reset controllers" if COMPILE_TEST
+	depends on ARCH_AXERA || COMPILE_TEST
+	default ARCH_AXERA
+	select MFD_SYSCON
+	select RESET_CONTROLLER

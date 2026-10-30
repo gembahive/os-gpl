@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0
+config AIC8800
+	bool "AICSemi AIC8800 SDIO Wi-Fi"
+	depends on CFG80211 && MMC
+	help
+	  The AICSemi AIC8800 family over SDIO, Wi-Fi only: aic8800_bsp (SDIO
+	  transport, chip bring-up, firmware download) and aic8800_fdrv (the
+	  FullMAC cfg80211 driver). The firmware it requests must be built in
+	  (EXTRA_FIRMWARE): it runs before the root filesystem is mounted.

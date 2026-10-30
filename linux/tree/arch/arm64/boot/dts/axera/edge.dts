@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright (c) 2026, GembaHive, Inc.
+ */
+/* The Edge board DT with the AArch64 CPUs. */
+
+#include "arm/axera/edge.dts"
+#include "ax620e-aarch64.dtsi"
+
+/* BL31 has CPU1 in its DRAM pen, so nothing resident uses the OCM: the NPU may have all of it. */
+&npu {
+	status = "okay";
+};

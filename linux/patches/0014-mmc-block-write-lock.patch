@@ -1,0 +1,126 @@
+MMC block: write lock from the device tree. A host node with
+gemba,writable-sectors (pairs of 32-bit cells: start and count, in 512-byte
+sectors) locks its card: every write, discard, secure erase or write-zeroes
+request not wholly inside one range fails, as does any other write-direction
+driver request, and the MMC_IOC_CMD and MMC_IOC_MULTI_CMD ioctls are refused
+(a read-direction command can still erase or lock the card). Requests reach
+mmc_blk_mq_issue_rq with absolute card sectors, CQE or not. The boot loader
+sets /chosen gemba,unlocked when it boots the stash or recovery; the card is
+then unlocked. MMC_BLOCK_WRITE_LOCK (default y) builds the lock.
+
+--- a/drivers/mmc/core/Kconfig
++++ b/drivers/mmc/core/Kconfig
+@@ -46,6 +46,15 @@ config MMC_BLOCK
+ 	  mount the filesystem. Almost everyone wishing MMC support
+ 	  should say Y or M here.
+ 
++config MMC_BLOCK_WRITE_LOCK
++	bool "Card write lock from the device tree"
++	depends on MMC_BLOCK && OF
++	default y
++	help
++	  Refuses card writes outside the gemba,writable-sectors ranges of
++	  the host node, and the MMC ioctls, unless /chosen has
++	  gemba,unlocked.
++
+ config MMC_BLOCK_MINORS
+ 	int "Number of minors per block device"
+ 	depends on MMC_BLOCK
+--- a/drivers/mmc/core/block.c
++++ b/drivers/mmc/core/block.c
+@@ -32,6 +32,7 @@
+ #include <linux/blkdev.h>
+ #include <linux/cdev.h>
+ #include <linux/mutex.h>
++#include <linux/of.h>
+ #include <linux/scatterlist.h>
+ #include <linux/string.h>
+ #include <linux/string_helpers.h>
+@@ -145,6 +146,9 @@ struct mmc_blk_data {
+ 	/* debugfs files (only in main mmc_blk_data) */
+ 	struct dentry *status_dentry;
+ 	struct dentry *ext_csd_dentry;
++
++	/* Set: only writes inside its ranges reach the card. */
++	const struct property *writable;
+ };
+ 
+ /* Device type for RPMB character devices */
+@@ -674,6 +678,9 @@ static int mmc_blk_ioctl_cmd(struct mmc_blk_data *md,
+ 	int err = 0, ioc_err = 0;
+ 	struct request *req;
+ 
++	if (md->writable)
++		return -EPERM;
++
+ 	idata = mmc_blk_ioctl_copy_from_user(ic_ptr);
+ 	if (IS_ERR(idata))
+ 		return PTR_ERR(idata);
+@@ -726,6 +733,9 @@ static int mmc_blk_ioctl_multi_cmd(struct mmc_blk_data *md,
+ 	unsigned int i, n;
+ 	struct request *req;
+ 
++	if (md->writable)
++		return -EPERM;
++
+ 	if (copy_from_user(&num_of_cmds, &user->num_of_cmds,
+ 			   sizeof(num_of_cmds)))
+ 		return -EFAULT;
+@@ -2417,6 +2427,24 @@ static int mmc_blk_wait_for_idle(struct mmc_queue *mq, struct mmc_host *host)
+ 	return mmc_blk_rw_wait(mq, NULL);
+ }
+ 
++/* Whether the write lies within one of the ranges (start, count). */
++static bool mmc_blk_write_allowed(const struct property *ranges,
++				  struct request *req)
++{
++	const __be32 *cell = ranges->value;
++	unsigned int i, cells = ranges->length / sizeof(*cell);
++	u64 first = blk_rq_pos(req), end = first + blk_rq_sectors(req);
++
++	for (i = 0; i + 1 < cells; i += 2) {
++		u64 start = be32_to_cpu(cell[i]);
++
++		if (first < end && first >= start &&
++		    end <= start + be32_to_cpu(cell[i + 1]))
++			return true;
++	}
++	return false;
++}
++
+ enum mmc_issued mmc_blk_mq_issue_rq(struct mmc_queue *mq, struct request *req)
+ {
+ 	struct mmc_blk_data *md = mq->blkdata;
+@@ -2424,6 +2452,14 @@ enum mmc_issued mmc_blk_mq_issue_rq(struct mmc_queue *mq, struct request *req)
+ 	struct mmc_host *host = card->host;
+ 	int ret;
+ 
++	if (md->writable && op_is_write(req_op(req)) &&
++	    !mmc_blk_write_allowed(md->writable, req)) {
++		pr_warn_ratelimited("%s: write refused: sectors %llu+%u\n",
++				    md->disk->disk_name, blk_rq_pos(req),
++				    blk_rq_sectors(req));
++		return MMC_REQ_FAILED_TO_START;
++	}
++
+ 	ret = mmc_blk_part_switch(card, md->part_type);
+ 	if (ret)
+ 		return MMC_REQ_FAILED_TO_START;
+@@ -2581,6 +2617,17 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
+ 
+ 	md->area_type = area_type;
+ 
++	/*
++	 * gemba,writable-sectors on the host node: pairs of 32-bit cells, the
++	 * start and count of each range of 512-byte sectors writable on the
++	 * card. Writes elsewhere and the MMC ioctls are refused. /chosen
++	 * gemba,unlocked, set by the boot loader, leaves the card unlocked.
++	 */
++	if (IS_ENABLED(CONFIG_MMC_BLOCK_WRITE_LOCK) &&
++	    !of_property_present(of_chosen, "gemba,unlocked"))
++		md->writable = of_find_property(mmc_dev(card->host)->of_node,
++						"gemba,writable-sectors", NULL);
++
+ 	/*
+ 	 * Set the read-only status based on the supported commands
+ 	 * and the write protect switch.

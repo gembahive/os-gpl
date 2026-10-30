@@ -1,0 +1,28 @@
+Bound the DesignWare receive polling loop as well as the final FIFO drain.
+A controller that produces no receive data must return an error so the
+optional panel logo cannot prevent boot before the watchdog is armed.
+
+--- a/drivers/spi/designware_spi.c
++++ b/drivers/spi/designware_spi.c
+@@ -21,6 +21,7 @@
+ #include <reset.h>
+ #include <spi.h>
+ #include <spi-mem.h>
++#include <time.h>
+ #include <asm/io.h>
+ #include <asm-generic/gpio.h>
+ #include <linux/bitfield.h>
+@@ -464,9 +465,13 @@
+ 
+ static int poll_transfer(struct dw_spi_priv *priv)
+ {
++	ulong start = get_timer(0);
++
+ 	do {
+ 		dw_writer(priv);
+ 		dw_reader(priv);
++		if (priv->rx_end > priv->rx && get_timer(start) >= RX_TIMEOUT)
++			return -ETIMEDOUT;
+ 	} while (priv->rx_end > priv->rx);
+ 
+ 	return 0;

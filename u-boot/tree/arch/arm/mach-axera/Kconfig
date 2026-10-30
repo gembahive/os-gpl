@@ -1,0 +1,81 @@
+if ARCH_AXERA
+
+config SYS_VENDOR
+	default "axera"
+
+config SYS_BOARD
+	default "ax620e"
+
+config SYS_CONFIG_NAME
+	default "ax620e"
+
+choice
+	prompt "Board"
+
+config TARGET_AX620E_EDGE
+	bool "Edge (AX620Q, boots from its TF card)"
+	select CPU_V7A
+
+config TARGET_AX620E_EDGE64
+	bool "Edge, AArch64 BL33"
+	select ARM64
+	select LINUX_KERNEL_IMAGE_HEADER
+	help
+	  The Edge's U-Boot as TF-A's BL33 (Non-secure EL2, under BL31).
+	  The arm64 Image header makes u-boot.bin loadable from a FIT as a
+	  "linux" image.
+
+endchoice
+
+# text_offset 0: the header names the extent from wherever it is loaded (POSITION_INDEPENDENT).
+config LNX_KRNL_IMG_TEXT_OFFSET_BASE
+	depends on LINUX_KERNEL_IMAGE_HEADER
+	default TEXT_BASE
+
+config AX620E_SLOTS_WITHOUT_HANDOFF
+	bool "Boot the A/B slots with no SPL64 handoff block"
+	depends on ARM64
+	help
+	  Without SPL64's handoff block the eFuse rollback floor is unknown
+	  (U-Boot64 is Non-secure and never reads the eFuses), so slots booted
+	  then would bypass rollback protection: a release loader refuses
+	  them (the stash and recovery on the pin still boot). With this on,
+	  slots boot with reset reason 0 and floor 0.
+
+config AX620E_CE_RNG
+	bool "Random numbers from the security engine"
+	depends on TARGET_AX620E_EDGE64 && DM_RNG
+	default y
+	help
+	  The EIP-130's random numbers as an RNG device, so bootm hands
+	  Linux /chosen/kaslr-seed and rng-seed. The engine's signed
+	  firmware (arch/arm/mach-axera/ce-fw.bin, supplied by the build)
+	  is built in and loaded unless an earlier stage already did.
+
+config AX620E_VERBOSE_BOOT
+	bool "The console on the front panel, over the logo"
+	depends on TARGET_AX620E_EDGE64 && DM_SPI && DESIGNWARE_SPI && VIDEO
+	depends on CONSOLE_MUX && SYS_CONSOLE_IS_IN_ENV
+	select VIDEO_DAMAGE
+	help
+	  The panel as a video device: what U-Boot prints after console
+	  init, drawn over the boot logo as it is printed. Needs stdout
+	  and stderr to name "vidconsole" in the default environment.
+
+config AX620E_SERIAL_CONSOLE
+	bool "The board's UART as U-Boot's and Linux's console"
+	depends on DM_SERIAL
+	select SYS_NS16550
+	help
+	  Without it no UART driver is built, so U-Boot neither reads nor
+	  writes the UART, and Linux boots with console=ttynull.
+
+config AX620E_LINUX_CONSOLE
+	string "Linux's console= (the board's UART)"
+	depends on AX620E_SERIAL_CONSOLE
+
+config AX620E_LINUX_EARLYCON
+	string "Linux's earlycon= (the same UART)"
+	depends on AX620E_SERIAL_CONSOLE
+
+endif

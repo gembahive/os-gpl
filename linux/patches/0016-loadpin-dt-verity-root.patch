@@ -1,0 +1,87 @@
+LoadPin: read and pin only the dm-verity root the device tree names. Upstream
+pins whichever filesystem the first module or firmware read comes from, so the
+first reader picks it. Now a read is refused unless its block device is a
+dm-verity target (EIO, restart or panic mode) whose root digest is the one in
+the dm-verity table of the root node's "verity" property, which the boot loader
+verified; so the pin can only be that device. That digest is the only trusted
+one: the securityfs interface for adding digests is closed.
+
+--- a/security/loadpin/loadpin.c
++++ b/security/loadpin/loadpin.c
+@@ -14,6 +14,7 @@
+ #include <linux/kernel_read_file.h>
+ #include <linux/lsm_hooks.h>
+ #include <linux/mount.h>
++#include <linux/of.h>
+ #include <linux/blkdev.h>
+ #include <linux/path.h>
+ #include <linux/sched.h>	/* current */
+@@ -148,6 +149,17 @@ static int loadpin_check(struct file *file, enum kernel_read_file_id id)
+ 	load_root = file->f_path.mnt->mnt_sb;
+ 	load_root_writable = sb_is_writable(load_root);
+ 
++	/* Only the dm-verity root the device tree names is read from or pinned. */
++	if (!dm_verity_loadpin_is_bdev_trusted(load_root->s_bdev)) {
++		if (unlikely(!enforce)) {
++			report_load(origin, file, "pinning-ignored");
++			return 0;
++		}
++
++		report_load(origin, file, "denied");
++		return -EPERM;
++	}
++
+ 	/* First loaded module/firmware defines the root for all others. */
+ 	spin_lock(&pinned_root_spinlock);
+ 	/*
+@@ -249,11 +261,50 @@ static void __init parse_exclude(void)
+ 	}
+ }
+ 
++#ifdef CONFIG_SECURITY_LOADPIN_VERITY
++/*
++ * The only trusted root digest is the one in the dm-verity table of the root
++ * node's "verity" property ("1 @ @ <block sizes> <blocks> <algorithm>
++ * <digest> <salt> ..."); the securityfs interface cannot add others.
++ */
++static void __init loadpin_trust_dt_verity(void)
++{
++	struct dm_verity_loadpin_trusted_root_digest *trd;
++	const char *digest;
++	size_t len;
++	int i;
++
++	deny_reading_verity_digests = true;
++	if (of_property_read_string(of_root, "verity", &digest))
++		return;
++	for (i = 0; i < 8 && digest; i++) {
++		digest = strchr(digest, ' ');
++		if (digest)
++			digest++;
++	}
++	if (!digest)
++		return;
++	len = strcspn(digest, " ") / 2;
++	trd = kzalloc(struct_size(trd, data, len), GFP_KERNEL);
++	if (!trd)
++		return;
++	trd->len = len;
++	if (!len || hex2bin(trd->data, digest, len)) {
++		kfree(trd);
++		return;
++	}
++	list_add_tail(&trd->node, &dm_verity_loadpin_trusted_root_digests);
++}
++#else
++static inline void loadpin_trust_dt_verity(void) { }
++#endif
++
+ static int __init loadpin_init(void)
+ {
+ 	pr_info("ready to pin (currently %senforcing)\n",
+ 		enforce ? "" : "not ");
+ 	parse_exclude();
++	loadpin_trust_dt_verity();
+ #ifdef CONFIG_SYSCTL
+ 	if (!register_sysctl("kernel/loadpin", loadpin_sysctl_table))
+ 		pr_notice("sysctl registration failed!\n");

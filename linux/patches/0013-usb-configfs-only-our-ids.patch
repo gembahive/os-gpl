@@ -1,0 +1,76 @@
+configfs gadget: only the configured vendor:product IDs reach the host. Host
+drivers bind by ID as well as by class, so a gadget offering another device's
+IDs (a touchscreen, a game controller) could have the host create an input
+device without any HID interface. A gadget binds to a UDC only with an
+idVendor:idProduct pair CONFIG_USB_CONFIGFS_IDS lists, and its IDs cannot
+change while bound.
+
+--- a/drivers/usb/gadget/Kconfig
++++ b/drivers/usb/gadget/Kconfig
+@@ -237,6 +237,15 @@
+ 	  appropriate symbolic links.
+ 	  For more information see Documentation/usb/gadget_configfs.rst.
+ 
++config USB_CONFIGFS_IDS
++	string "Vendor:product IDs a configfs gadget may bind with"
++	depends on USB_CONFIGFS
++	help
++	  Space-separated idVendor:idProduct pairs in lowercase hex, such
++	  as "1d6b:0104". A gadget with any other pair cannot be bound to
++	  a UDC, and a bound gadget's IDs cannot change, so the host sees
++	  no other. Empty, no gadget can be bound.
++
+ config USB_CONFIGFS_SERIAL
+ 	bool "Generic serial bulk in/out"
+ 	depends on USB_CONFIGFS
+--- a/drivers/usb/gadget/configfs.c
++++ b/drivers/usb/gadget/configfs.c
+@@ -170,12 +170,19 @@
+ static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
+ 		const char *page, size_t len)		\
+ {							\
++	struct gadget_info *gi = to_gadget_info(item);	\
+ 	u16 val;					\
+ 	int ret;					\
+ 	ret = kstrtou16(page, 0, &val);			\
+ 	if (ret)					\
+ 		return ret;				\
+-	to_gadget_info(item)->cdev.desc._name = cpu_to_le16p(&val);	\
++	mutex_lock(&gi->lock);				\
++	if (gi->composite.gadget_driver.udc_name) {	\
++		mutex_unlock(&gi->lock);		\
++		return -EBUSY;				\
++	}						\
++	gi->cdev.desc._name = cpu_to_le16p(&val);	\
++	mutex_unlock(&gi->lock);			\
+ 	return len;					\
+ }
+ 
+@@ -268,6 +275,16 @@
+ 	return 0;
+ }
+ 
++static bool gadget_id_allowed(struct gadget_info *gi)
++{
++	char id[sizeof(" vvvv:pppp ")];
++
++	snprintf(id, sizeof(id), " %04x:%04x ",
++		 le16_to_cpu(gi->cdev.desc.idVendor),
++		 le16_to_cpu(gi->cdev.desc.idProduct));
++	return strstr(" " CONFIG_USB_CONFIGFS_IDS " ", id);
++}
++
+ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
+ 		const char *page, size_t len)
+ {
+@@ -296,6 +313,10 @@
+ 			ret = -EBUSY;
+ 			goto err;
+ 		}
++		if (!gadget_id_allowed(gi)) {
++			ret = -EPERM;
++			goto err;
++		}
+ 		gi->composite.gadget_driver.udc_name = name;
+ 		ret = usb_gadget_register_driver(&gi->composite.gadget_driver);
+ 		if (ret) {

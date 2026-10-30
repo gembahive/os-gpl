@@ -1,0 +1,15 @@
+DesignWare I2C: release every reset the node names, not only the first. The
+AX620E has an APB and a core reset per controller; either one left asserted
+holds the block. The binding's resets maxItems 1 is exceeded on purpose.
+
+--- a/drivers/i2c/busses/i2c-designware-platdrv.c
++++ b/drivers/i2c/busses/i2c-designware-platdrv.c
+@@ -236,7 +236,7 @@
+ 	if (ret)
+ 		return ret;
+ 
+-	dev->rst = devm_reset_control_get_optional_exclusive(device, NULL);
++	dev->rst = devm_reset_control_array_get_optional_exclusive(device);
+ 	if (IS_ERR(dev->rst))
+ 		return dev_err_probe(device, PTR_ERR(dev->rst), "failed to acquire reset\n");
+ 

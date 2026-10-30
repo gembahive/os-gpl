@@ -1,0 +1,47 @@
+Hooks the Axera target (AArch32 or AArch64, by board), its mach directory and its DTB into the build.
+
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -629,6 +629,12 @@
+ 	select OF_CONTROL
+ 	help
+ 	  Support for the Airoha soc.
++
++config ARCH_AXERA
++	bool "Axera AX620E"
++	select DM
++	select OF_CONTROL
++	select SYS_ARCH_TIMER
+ 
+ config ARCH_AT91
+ 	bool "Atmel AT91"
+@@ -2294,6 +2300,8 @@
+ 
+ source "arch/arm/mach-at91/Kconfig"
+ 
++source "arch/arm/mach-axera/Kconfig"
++
+ source "arch/arm/mach-bcm283x/Kconfig"
+ 
+ source "arch/arm/mach-bcmbca/Kconfig"
+--- a/arch/arm/Makefile
++++ b/arch/arm/Makefile
+@@ -57,6 +57,7 @@
+ machine-$(CONFIG_ARCH_APPLE)		+= apple
+ machine-$(CONFIG_ARCH_ASPEED)		+= aspeed
+ machine-$(CONFIG_ARCH_AT91)		+= at91
++machine-$(CONFIG_ARCH_AXERA)		+= axera
+ machine-$(CONFIG_ARCH_BCM283X)		+= bcm283x
+ machine-$(CONFIG_ARCH_BCMBCA)		+= bcmbca
+ machine-$(CONFIG_ARCH_BCMSTB)		+= bcmstb
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -1043,6 +1043,8 @@
+ 	bcm968580xref.dtb
+ dtb-$(CONFIG_BCM6878) += \
+ 	bcm96878.dtb
++
++dtb-$(CONFIG_ARCH_AXERA) += ax620e-edge.dtb
+ 
+ dtb-$(CONFIG_ASPEED_AST2500) += ast2500-evb.dtb
+ dtb-$(CONFIG_ASPEED_AST2600) += \

@@ -1,0 +1,17 @@
+Keep the vendor loader's no-prompt behaviour.
+
+BOOTDELAY=-2 skips console abort, and abboot normally resets on failure.
+Still reset unconditionally if autoboot returns instead of entering a CLI.
+
+--- a/common/main.c
++++ b/common/main.c
+@@ -87,7 +87,8 @@
+ 		panic("Failed to boot");
+ 	}
+ 
+-	cli_loop();
++	/* No prompt on any boot-command failure, including a missing command. */
++	do_reset(NULL, 0, 0, NULL);
+ 
+ 	panic("No CLI available");
+ }

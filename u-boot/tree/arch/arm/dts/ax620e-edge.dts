@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Copyright (c) 2026, GembaHive, Inc.
+ */
+/*
+ * U-Boot's own device tree: only what U-Boot drives; not passed to Linux.
+ */
+/dts-v1/;
+
+/ {
+	model = "Edge";
+	compatible = "axera,ax620q", "axera,ax620e";
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	aliases {
+		mmc1 = &sd;
+	};
+
+	soc {
+		compatible = "simple-bus";
+		bootph-all;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* PHY delays for the modes used here (no UHS). */
+		sd: mmc@104e0000 {
+			compatible = "axera,ax620e-sd4hc", "cdns,sd4hc";
+			reg = <0x104e0000 0x1000>;
+			bus-width = <4>;
+			cap-sd-highspeed;
+			broken-cd;
+			cdns,phy-input-delay-sd-highspeed = <2>;
+			cdns,phy-input-delay-legacy = <3>;
+			cdns,phy-dll-delay-sdclk = <0>;
+		};
+
+		crypto@4900000 {
+			compatible = "axera,ax620e-ce";
+			reg = <0x04900000 0x40000>;
+		};
+
+		spi@6072000 {
+			compatible = "snps,dw-apb-ssi";
+			reg = <0x06072000 0x400>;
+			spi-max-frequency = <20000000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
+};
+
+/*
+ * Only with a UART driver: the serial uclass would otherwise bind the
+ * stdout-path node with no driver and use the missing device.
+ */
+#ifdef CONFIG_AX620E_SERIAL_CONSOLE
+/ {
+	aliases {
+		serial0 = &uart3;
+	};
+
+	chosen {
+		stdout-path = &uart3;
+	};
+
+	soc {
+		uart3: serial@6080000 {
+			compatible = "snps,dw-apb-uart";
+			bootph-all;
+			reg = <0x06080000 0x400>;
+			clock-frequency = <208000000>;
+			reg-shift = <2>;
+			reg-io-width = <4>;
+		};
+	};
+};
+#endif

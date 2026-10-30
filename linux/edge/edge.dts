@@ -1,0 +1,328 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright (c) 2026, GembaHive, Inc.
+ */
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+
+/* The AArch32 CPU and timer nodes come first, which fixes the DTB node order. */
+#include "ax620e-aarch32.dtsi"
+#include "arm64/axera/ax620q.dtsi"
+
+/ {
+	model = "Edge";
+	compatible = "axera,ax620q", "axera,ax620e";
+
+	/* U-Boot's bootargs name /dev/mmcblk1, and console=ttyS3 with [image] serial_console. */
+	aliases {
+		i2c0 = &i2c0;
+		i2c1 = &i2c1;
+		mmc1 = &sd;
+		spi2 = &spi2;
+		serial3 = &uart3;
+	};
+
+	/* U-Boot writes the unit's real DRAM size (256 or 512 MiB) here. */
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x40000000 0x20000000>;
+	};
+
+	/* Release the AIC8800 reset before SDIO enumeration. */
+	wifi_pwrseq: wifi-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&gpio1 28 GPIO_ACTIVE_LOW>;
+		post-power-on-delay-ms = <50>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/*
+		 * Fixed address: the RAM earlycon targets this region's console
+		 * zone (0x45f50000).
+		 */
+		ramoops@45f00000 {
+			compatible = "ramoops";
+			reg = <0x45f00000 0xf0000>;
+			record-size = <0x40000>;
+			console-size = <0x80000>;
+			ftrace-size = <0x20000>;
+			/* The kernel log on every reboot and panic, not only on an oops (KMSG_DUMP_SHUTDOWN). */
+			max-reason = <4>;
+		};
+
+		/* No linux,cma: it would override the defconfig's CMA_SIZE_PERCENTAGE. */
+	};
+
+	/*
+	 * /sys/class/backlight/backlight, 0-255 linear. No panel links to it:
+	 * unlinked, pwm-backlight lights it at probe. The bootloader leaves the
+	 * pad a GPIO driven high; a stopped PWM would drive it low, so the pad
+	 * stays the GPIO until this driver has started the PWM.
+	 */
+	backlight {
+		compatible = "pwm-backlight";
+		pinctrl-names = "init", "default";
+		pinctrl-0 = <&backlight_gpio_pins>;
+		pinctrl-1 = <&backlight_pins>;
+		pwms = <&pwm1 2 462963 0>;
+		brightness-levels = <0 255>;
+		num-interpolated-steps = <255>;
+		default-brightness-level = <125>;
+	};
+
+	thermal-zones {
+		soc_thm {
+			polling-delay = <1000>;
+			polling-delay-passive = <500>;
+			thermal-sensors = <&tsensor>;
+
+			trips {
+				/* Sensing only: no CPU cooling device. */
+				trip-point0 {
+					temperature = <85000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				trip-point1 {
+					temperature = <90000>;
+					hysteresis = <5000>;
+					type = "hot";
+				};
+
+				/* Orderly shutdown before the hardware limit. */
+				soc-crit {
+					temperature = <105000>;
+					hysteresis = <0>;
+					type = "critical";
+				};
+
+				/* Hardware reset if orderly shutdown cannot finish. */
+				soc-tshut {
+					temperature = <120000>;
+					hysteresis = <0>;
+					type = "critical";
+				};
+			};
+		};
+	};
+};
+
+/* The pads as the stock kernel set them (drive code 3, no schmitt; pull-up on I2C). */
+&pinctrl {
+	backlight_gpio_pins: backlight-gpio-pins {
+		pins = "UART1_TXD";
+		function = "gpio";
+		drive-strength = <3>;
+		input-schmitt-disable;
+	};
+
+	backlight_pins: backlight-pins {
+		pins = "UART1_TXD";
+		function = "pwm";
+		drive-strength = <3>;
+		input-schmitt-disable;
+	};
+
+	i2c1_pins: i2c1-pins {
+		pins = "I2C1_SCL", "I2C1_SDA";
+		function = "i2c1";
+		drive-strength = <3>;
+		input-schmitt-disable;
+		bias-pull-up;
+	};
+
+	/* SCLK and MOSI; chip select is a GPIO. No MISO: the panel is write-only. */
+	spi2_pins: spi2-pins {
+		pins = "RGMII_TXCLK", "RGMII_TXD0";
+		function = "spi_m2";
+		drive-strength = <3>;
+		input-schmitt-disable;
+	};
+
+	/* An interrupt does not request its GPIO, so nothing else muxes this pad. */
+	touch_pins: touch-pins {
+		pins = "VI_D2";
+		function = "gpio";
+	};
+};
+
+&i2c0 {
+	status = "okay";
+
+	bridge@41 {
+		compatible = "lontium,lt7911exc";
+		reg = <0x41>;
+		irq-gpios = <&gpio1 0 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio1 1 GPIO_ACTIVE_LOW>;
+
+		port {
+			bridge_out: endpoint {
+				remote-endpoint = <&vin_in>;
+			};
+		};
+	};
+};
+
+/*
+ * The bridge's firmware sets its output: 4 lanes of 8-bit YUV 4:2:2. The
+ * board wires clock to physical slot 2 and data to 0, 1, 3, 4.
+ */
+&vin {
+	status = "okay";
+
+	port {
+		vin_in: endpoint {
+			remote-endpoint = <&bridge_out>;
+			clock-lanes = <2>;
+			data-lanes = <0 1 3 4>;
+		};
+	};
+};
+
+&i2c1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c1_pins>;
+	clock-frequency = <400000>;
+	i2c-sda-hold-time-ns = <500>;
+	status = "okay";
+
+	/* Hynitron CST8xxT, CST816S register map. */
+	touchscreen@15 {
+		compatible = "hynitron,cst816s";
+		reg = <0x15>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&touch_pins>;
+		interrupts-extended = <&gpio0 2 IRQ_TYPE_EDGE_FALLING>;
+		reset-gpios = <&gpio0 4 GPIO_ACTIVE_LOW>;
+		touchscreen-size-x = <240>;
+		touchscreen-size-y = <296>;
+		touchscreen-inverted-y;
+	};
+};
+
+&pwm1 {
+	status = "okay";
+};
+
+&spi2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi2_pins>;
+	/* A GPIO select: under PIO the native CS0 drops whenever the FIFO drains. */
+	cs-gpios = <&gpio1 27 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	/*
+	 * ST7789P3, 240x284 at RAM row 0, /dev/fb0 through DRM's fbdev
+	 * emulation. Its init sequence is firmware/<first compatible>.bin, built
+	 * in: U-Boot's init sequence without its inversion off, which is the
+	 * reset default and would invert the image shown while the sequence
+	 * runs. Being write-only, the panel is not reset: U-Boot's logo stays
+	 * through the first unblank of fb0, which reinits the panel and fills
+	 * it with what fb0 holds.
+	 * The bus runs at 208 MHz / 4. mipi_dbi's reset GPIO is high while
+	 * running, its D/C high for data.
+	 */
+	panel@0 {
+		compatible = "sitronix,st7789p3", "panel-mipi-dbi-spi";
+		reg = <0>;
+		/* Required by DRM; physical dimensions are not specified. */
+		width-mm = <0>;
+		height-mm = <0>;
+		spi-max-frequency = <80000000>;
+		dc-gpios = <&gpio1 19 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio0 31 GPIO_ACTIVE_HIGH>;
+		write-only;
+
+		panel-timing {
+			hactive = <240>;
+			vactive = <284>;
+			hback-porch = <0>;
+			vback-porch = <0>;
+			clock-frequency = <0>;
+			hfront-porch = <0>;
+			hsync-len = <0>;
+			vfront-porch = <0>;
+			vsync-len = <0>;
+		};
+	};
+};
+
+/* The TF card; PHY delays as the stock kernel set them. */
+&sd {
+	sdhci-caps-mask = <0x7 0x00200000>;
+	bus-width = <4>;
+	max-frequency = <200000000>;
+	cap-sd-highspeed;
+	no-sdio;
+	no-mmc;
+	disable-wp;
+	broken-cd;
+	cdns,phy-input-delay-sd-highspeed = <2>;
+	cdns,phy-input-delay-legacy = <3>;
+	cdns,phy-input-delay-sd-uhs-sdr12 = <3>;
+	cdns,phy-input-delay-sd-uhs-sdr25 = <2>;
+	cdns,phy-input-delay-sd-uhs-sdr50 = <1>;
+	cdns,phy-input-delay-sd-uhs-ddr50 = <1>;
+	cdns,phy-dll-delay-sdclk = <0>;
+	/*
+	 * The only card sectors Linux may write (start, count): the two U-Boot
+	 * env copies, the root slots, and /data to the end of the card.
+	 */
+	gemba,writable-sectors = <270336 128>, <278528 128>, <286720 4194304>,
+				 <4546560 4290420735>;
+	status = "okay";
+};
+
+/* AIC8800 at 3.3 V; the stock kernel's working host delays and capability mask. */
+&sdio {
+	sdhci-caps-mask = <0x7 0x00200000>;
+	bus-width = <4>;
+	max-frequency = <200000000>;
+	cap-sd-highspeed;
+	no-1-8-v;
+	no-sd;
+	no-mmc;
+	disable-wp;
+	non-removable;
+	mmc-pwrseq = <&wifi_pwrseq>;
+	cdns,phy-input-delay-sd-highspeed = <4>;
+	cdns,phy-input-delay-legacy = <3>;
+	cdns,phy-input-delay-sd-uhs-sdr12 = <3>;
+	cdns,phy-input-delay-sd-uhs-sdr25 = <2>;
+	cdns,phy-input-delay-sd-uhs-sdr50 = <1>;
+	cdns,phy-input-delay-sd-uhs-ddr50 = <1>;
+	cdns,phy-dll-delay-sdclk = <0>;
+	status = "okay";
+};
+
+&usb {
+	dr_mode = "peripheral";
+	status = "okay";
+};
+
+&ce {
+	status = "okay";
+};
+
+&tsensor {
+	status = "okay";
+};
+
+/* Behind the case; pads on an opened unit. */
+&uart3 {
+	status = "okay";
+};
+
+&tdp {
+	status = "okay";
+};
+
+&jenc {
+	status = "okay";
+};

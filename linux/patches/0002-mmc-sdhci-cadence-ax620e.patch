@@ -1,0 +1,56 @@
+Axera AX620E SD4HC (the TF card and the SDIO Wi-Fi): the block's bus clocks
+and resets as the vendor driver enabled and released them (U-Boot leaves the
+TF card's so, never the SDIO's), a PHY DLL relock before the delay parameters,
+and 32-bit ADMA.
+
+--- a/drivers/mmc/host/sdhci-cadence.c
++++ b/drivers/mmc/host/sdhci-cadence.c
+@@ -497,6 +497,37 @@
+ 	.pltfm_data = {
+ 		.ops = &sdhci_cdns_ops,
+ 		.quirks2 = SDHCI_QUIRK2_PRESET_VALUE_BROKEN,
++	},
++};
++
++#define SDHCI_CDNS_PHY_DLL_RESET	0x0f
++
++/* Enable clocks and release resets before relocking the PHY DLL. */
++static int ax620e_drv_init(struct platform_device *pdev)
++{
++	struct sdhci_cdns_priv *priv = sdhci_cdns_priv(platform_get_drvdata(pdev));
++	struct reset_control *rst;
++	struct clk_bulk_data *clks;
++	int ret;
++
++	ret = devm_clk_bulk_get_all_enabled(&pdev->dev, &clks);
++	if (ret < 0)
++		return ret;
++	rst = devm_reset_control_array_get_optional_exclusive(&pdev->dev);
++	if (IS_ERR(rst))
++		return PTR_ERR(rst);
++	ret = reset_control_deassert(rst);
++	ret = ret ?: sdhci_cdns_write_phy_reg(priv, SDHCI_CDNS_PHY_DLL_RESET, 0);
++	return ret ?: sdhci_cdns_write_phy_reg(priv, SDHCI_CDNS_PHY_DLL_RESET, 1);
++}
++
++static const struct sdhci_cdns_drv_data sdhci_ax620e_drv_data = {
++	.init = ax620e_drv_init,
++	.pltfm_data = {
++		.ops = &sdhci_cdns_ops,
++		/* 64-bit ADMA corrupts memory here; DRAM is below 4 GiB. */
++		.quirks2 = SDHCI_QUIRK2_PRESET_VALUE_BROKEN |
++			   SDHCI_QUIRK2_BROKEN_64_BIT_DMA,
+ 	},
+ };
+
+@@ -653,6 +684,10 @@
+ 		.compatible = "mobileye,eyeq-sd4hc",
+ 		.data = &sdhci_eyeq_drv_data,
+ 	},
++	{
++		.compatible = "axera,ax620e-sd4hc",
++		.data = &sdhci_ax620e_drv_data,
++	},
+ 	{ .compatible = "cdns,sd4hc" },
+ 	{ /* sentinel */ }
+ };

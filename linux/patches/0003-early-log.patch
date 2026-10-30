@@ -1,0 +1,34 @@
+One-page ramoops-compatible early boot console.
+
+--- a/drivers/tty/serial/Kconfig
++++ b/drivers/tty/serial/Kconfig
+@@ -73,6 +73,19 @@
+ 	  your boot loader (lilo or loadlin) about how to pass options to the
+ 	  kernel at boot time.)
+ 
++config SERIAL_EARLY_RAM
++	bool "Early Edge console in reserved ramoops RAM"
++	depends on ARCH_AXERA && !CPU_BIG_ENDIAN
++	depends on FIX_EARLYCON_MEM
++	select SERIAL_CORE
++	select SERIAL_CORE_CONSOLE
++	select SERIAL_EARLYCON
++	help
++	  Write the primary entry marker and early boot messages to the first
++	  page of Edge's ramoops console. Enable with earlycon=early_ram,0x45f50000
++	  and disable SERIAL_8250_CONSOLE so the inherited UART cannot claim it.
++	  Retires after SMP, before normal ramoops saves and resets the record.
++
+ config SERIAL_EARLYCON_SEMIHOST
+ 	bool "Early console using Arm compatible semihosting"
+ 	depends on ARM64 || ARM || RISCV
+--- a/drivers/tty/serial/Makefile
++++ b/drivers/tty/serial/Makefile
+@@ -7,6 +7,7 @@
+ serial_base-y := serial_core.o serial_base_bus.o serial_ctrl.o serial_port.o
+ 
+ obj-$(CONFIG_SERIAL_EARLYCON) += earlycon.o
++obj-$(CONFIG_SERIAL_EARLY_RAM) += early_ram.o
+ obj-$(CONFIG_SERIAL_EARLYCON_SEMIHOST) += earlycon-semihost.o
+ obj-$(CONFIG_SERIAL_EARLYCON_RISCV_SBI) += earlycon-riscv-sbi.o
+ 

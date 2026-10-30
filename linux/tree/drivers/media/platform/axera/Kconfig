@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config VIDEO_AX620E_VIN
+	tristate "Axera AX620E video capture (CSI-2 receiver + VIN)"
+	depends on V4L_PLATFORM_DRIVERS && VIDEO_DEV=y && OF
+	depends on ARCH_AXERA || COMPILE_TEST
+	select V4L2_FWNODE
+	select VIDEOBUF2_DMA_CONTIG
+	select MFD_SYSCON
+	help
+	  The MIPI CSI-2 receiver and the VIN's ISP-bypass path of the Axera
+	  AX620E family: whole packed YUV 4:2:2 frames from a CSI-2 bridge to
+	  memory, as one V4L2 capture node.
+
+config VIDEO_AX620E_TDP
+	tristate "Axera AX620E TDP scaler"
+	depends on V4L_MEM2MEM_DRIVERS && VIDEO_DEV=y && OF && HAS_DMA
+	depends on ARCH_AXERA || COMPILE_TEST
+	select VIDEOBUF2_DMA_CONTIG
+	select V4L2_MEM2MEM_DEV
+	help
+	  The two-dimensional processor of the Axera AX620E family: crop,
+	  scale and colour conversion of NV12/YUYV frames to NV12 or RGB565,
+	  as one V4L2 mem2mem node.
+
+config VIDEO_AX620E_JPEG
+	tristate "Axera AX620E JPEG encoder"
+	depends on V4L_MEM2MEM_DRIVERS && VIDEO_DEV=y && OF && HAS_DMA
+	depends on ARCH_AXERA || COMPILE_TEST
+	select VIDEOBUF2_DMA_CONTIG
+	select V4L2_MEM2MEM_DEV
+	select V4L2_JPEG_HELPER
+	help
+	  The VeriSilicon JPEG encoder of the Axera AX620E family, driven
+	  through its VCMD command engine: raw frames in, baseline JPEG out,
+	  as one V4L2 mem2mem node.

@@ -1,0 +1,29 @@
+Axera AX620E SD4HC (the TF card): a PHY DLL relock before the delays, as the
+vendor U-Boot does.
+
+--- a/drivers/mmc/sdhci-cadence.c
++++ b/drivers/mmc/sdhci-cadence.c
+@@ -24,6 +24,8 @@
+ 	const char *property;
+ 	u8 addr;
+ };
++
++#define SDHCI_CDNS_PHY_DLL_RESET	0x0f
+ 
+ static const struct sdhci_cdns_phy_cfg sdhci_cdns_phy_cfgs[] = {
+ 	{ "cdns,phy-input-delay-sd-highspeed", SDHCI_CDNS_PHY_DLY_SD_HS, },
+@@ -275,6 +277,14 @@
+ 	ret = mmc_of_parse(dev, &plat->cfg);
+ 	if (ret)
+ 		return ret;
++
++	/* Relock the DLL before new delays take effect. */
++	if (device_is_compatible(dev, "axera,ax620e-sd4hc")) {
++		ret = sdhci_cdns_write_phy_reg(plat, SDHCI_CDNS_PHY_DLL_RESET, 0) ?:
++		      sdhci_cdns_write_phy_reg(plat, SDHCI_CDNS_PHY_DLL_RESET, 1);
++		if (ret)
++			return ret;
++	}
+ 
+ 	if (device_is_compatible(dev, "cdns,sd6hc"))
+ 		ret = sdhci_cdns6_phy_init(dev, plat);

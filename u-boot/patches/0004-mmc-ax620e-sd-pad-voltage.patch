@@ -1,0 +1,40 @@
+Restore the AX620E SD pad-voltage selection after set_ios, matching the vendor
+sdhci_ax620e driver. The SD controller's standard voltage bits do not select
+the Axera G9 pad voltage. Leave other Cadence controllers and eMMC untouched.
+
+--- a/drivers/mmc/sdhci-cadence.c
++++ b/drivers/mmc/sdhci-cadence.c
+@@ -12,5 +12,6 @@
+ #include <linux/bitops.h>
+ #include <linux/bug.h>
++#include <linux/delay.h>
+ #include <linux/io.h>
+ #include <linux/iopoll.h>
+ #include <linux/sizes.h>
+@@ -155,7 +156,26 @@
+ 		sdhci_cdns6_phy_adj(mmc->dev, plat, mmc->selected_mode);
+ }
+ 
++static int sdhci_cdns_set_ios_post(struct sdhci_host *host)
++{
++	struct mmc *mmc = host->mmc;
++
++	if (!device_is_compatible(mmc->dev, "axera,ax620e-sd4hc") || !IS_SD(mmc))
++		return 0;
++
++	/* Wait for G9 VDET, then select the CMD/DATA pad voltage. */
++	mdelay(10);
++	if (readl(0x104f1058) & BIT(0))
++		/* 3.3 V: clear G9 PINCTRL bits 8:7 through its clear alias. */
++		writel(GENMASK(8, 7), 0x104f1008);
++	else
++		/* 1.8 V: set the same bits through its set alias. */
++		writel(GENMASK(8, 7), 0x104f1004);
++	return 0;
++}
++
+ static const struct sdhci_ops sdhci_cdns_ops = {
+ 	.set_control_reg = sdhci_cdns_set_control_reg,
++	.set_ios_post = sdhci_cdns_set_ios_post,
+ };
+ 

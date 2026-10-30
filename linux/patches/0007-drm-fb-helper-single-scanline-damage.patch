@@ -1,0 +1,15 @@
+Backport of mainline c28c22c8cfbd ("drm/fb-helper: Fix clipping when damage
+area spans a single scanline"): a write ending at a scanline end, e.g. one
+whole row, got x2 = 0 and never reached the panel.
+
+--- a/drivers/gpu/drm/drm_fb_helper.c
++++ b/drivers/gpu/drm/drm_fb_helper.c
+@@ -641,7 +641,7 @@
+ 		 * the number of horizontal pixels that need an update.
+ 		 */
+ 		off_t bit_off = (off % line_length) * 8;
+-		off_t bit_end = (end % line_length) * 8;
++		off_t bit_end = bit_off + len * 8;
+ 
+ 		x1 = bit_off / info->var.bits_per_pixel;
+ 		x2 = DIV_ROUND_UP(bit_end, info->var.bits_per_pixel);

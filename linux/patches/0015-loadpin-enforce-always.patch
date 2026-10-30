@@ -1,0 +1,25 @@
+LoadPin: enforcement cannot be switched off at runtime. Upstream lets the
+kernel.loadpin.enforce sysctl drop to 0 whenever the pinned filesystem is
+writable or has no block device (a tmpfs, say), so a pin on the wrong
+filesystem became an off switch. The sysctl's minimum is now always 1: a wrong
+pin can only refuse loads.
+
+--- a/security/loadpin/loadpin.c
++++ b/security/loadpin/loadpin.c
+@@ -67,14 +67,8 @@ static struct ctl_table loadpin_sysctl_table[] = {
+ 
+ static void set_sysctl(bool is_writable)
+ {
+-	/*
+-	 * If load pinning is not enforced via a read-only block
+-	 * device, allow sysctl to change modes for testing.
+-	 */
+-	if (is_writable)
+-		loadpin_sysctl_table[0].extra1 = SYSCTL_ZERO;
+-	else
+-		loadpin_sysctl_table[0].extra1 = SYSCTL_ONE;
++	/* Enforcement is never switched off at runtime, writable root or not. */
++	loadpin_sysctl_table[0].extra1 = SYSCTL_ONE;
+ }
+ #else
+ static inline void set_sysctl(bool is_writable) { }

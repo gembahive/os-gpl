@@ -1,0 +1,429 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright (c) 2026, GembaHive, Inc.
+ */
+/*
+ * Axera AX620E family SoC nodes, as found on the AX620Q. No CPU or timer
+ * nodes: those are per-architecture.
+ * Addresses come from the vendor 4.19 SDK drivers.
+ */
+
+#include <dt-bindings/clock/axera,ax620e-clk.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/reset/axera,ax620e-reset.h>
+
+/ {
+	compatible = "axera,ax620e";
+	interrupt-parent = <&gic>;
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		gic: interrupt-controller@1851000 {
+			compatible = "arm,gic-400";
+			reg = <0x01851000 0x1000>,
+			      <0x01852000 0x2000>;
+			interrupt-controller;
+			#interrupt-cells = <3>;
+		};
+
+		tsensor: thermal-sensor@2000000 {
+			compatible = "axera,ax620e-tsensor";
+			reg = <0x02000000 0x1000>,
+			      <0x00000790 0x4>;	/* SPL calibration word */
+			clocks = <&common_clk AX620E_CLK_THM_EB>, <&common_clk AX620E_PCLK_THM_EB>;
+			resets = <&common_clk AX620E_RST_COMMON_THM0>, <&common_clk AX620E_RST_COMMON_THM1>;
+			interrupts = <GIC_SPI 61 IRQ_TYPE_LEVEL_HIGH>;
+			#thermal-sensor-cells = <0>;
+			status = "disabled";
+		};
+
+		uid@788 {
+			compatible = "axera,ax620e-uid";
+			reg = <0x788 8>;
+		};
+
+		/* 64 KiB windows: the set/clear aliases sit up to +0x8000. */
+		common_clk: clock-controller@2340000 {
+			compatible = "axera,ax620e-common-clk", "syscon";
+			reg = <0x02340000 0x10000>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		/* The ISP's clock/reset window (the vendor's size): no provider models it; the VIN takes it as a syscon. */
+		isp_syscon: syscon@2500000 {
+			compatible = "axera,ax620e-isp-syscon", "syscon";
+			reg = <0x02500000 0x1000>;
+		};
+
+		/*
+		 * Capture: the whole ISP register file (the driver uses SIF, IFE
+		 * bypass and one write-DMA), CSI-2 controller 0 and the D-PHY. The
+		 * endpoint is the board's: data-lanes/clock-lanes name the physical
+		 * slot (0-5) of each logical lane.
+		 */
+		vin: video-capture@2400000 {
+			compatible = "axera,ax620e-vin";
+			reg = <0x02400000 0x100000>, <0x02600000 0x2000>, <0x023f0000 0x1000>;
+			reg-names = "vin", "csi", "dphy";
+			interrupts = <GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&common_clk AX620E_CLK_VI_EB>, <&common_clk AX620E_CLK_ISP_MM_EB>,
+				 <&common_clk AX620E_CLK_DPHYRX_TLB_EB>;
+			clock-names = "vi", "isp_mm", "dphyrx_tlb";
+			resets = <&common_clk AX620E_RST_COMMON_DPHYRX_TLB>,
+				 <&common_clk AX620E_RST_COMMON_DPHYRX_PWR_OFF>,
+				 <&common_clk AX620E_RST_COMMON_DPHYRX_PWR_READY>;
+			reset-names = "dphyrx_tlb", "dphy_pwr_off", "dphy_pwr_ready";
+			axera,isp-syscon = <&isp_syscon>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&csi2rx_pins>;
+			status = "disabled";
+		};
+
+		periph_clk: clock-controller@4870000 {
+			compatible = "axera,ax620e-periph-clk", "syscon";
+			reg = <0x04870000 0x10000>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+			assigned-clocks = <&periph_clk AX620E_CLK_I2C_SEL>;
+			assigned-clock-parents = <&common_clk AX620E_CPLL_208M>;
+		};
+
+		flash_clk: clock-controller@10030000 {
+			compatible = "axera,ax620e-flash-clk", "syscon";
+			reg = <0x10030000 0x10000>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		mm_clk: clock-controller@4430000 {
+			compatible = "axera,ax620e-mm-clk", "syscon";
+			reg = <0x04430000 0x10000>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		vpu_clk: clock-controller@4030000 {
+			compatible = "axera,ax620e-vpu-clk", "syscon";
+			reg = <0x04030000 0x10000>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		/* Writes nothing at probe: U-Boot's pad setup stands until a state claims a pad. */
+		pinctrl: pinctrl@2300000 {
+			compatible = "axera,ax620e-pinctrl";
+			reg = <0x02300000 0xb000>, <0x104f0000 0x3000>;
+
+			/* Function only: claiming the pads keeps GPIO requests off them; U-Boot's pull/drive stand. */
+			sd_pins: sd-pins {
+				pins = "SD_CLK", "SD_CMD", "SD_DAT0", "SD_DAT1", "SD_DAT2", "SD_DAT3";
+				function = "sd";
+			};
+
+			sdio_pins: sdio-pins {
+				pins = "SDIO_CLK", "SDIO_CMD", "SDIO_DAT0", "SDIO_DAT1", "SDIO_DAT2", "SDIO_DAT3";
+				function = "sdio";
+			};
+
+			i2c0_pins: i2c0-pins {
+				pins = "I2C0_SCL", "I2C0_SDA";
+				function = "i2c0";
+				bias-pull-up;
+				drive-strength = <3>;
+				input-schmitt-disable;
+			};
+
+			uart3_pins: uart3-pins {
+				pins = "UART3_TXD", "UART3_RXD";
+				function = "uart3";
+			};
+
+			/* Same as U-Boot's pad table: all-zero words. */
+			csi2rx_pins: csi2rx-pins {
+				pins = "CDRX_L0N", "CDRX_L0P", "CDRX_L1N", "CDRX_L1P",
+				       "CDRX_L2N", "CDRX_L2P", "CDRX_L3N", "CDRX_L3P",
+				       "CDRX_L4N", "CDRX_L4P", "CDRX_L5N", "CDRX_L5P";
+				function = "dphy_rx";
+				drive-strength = <0>;
+				bias-disable;
+				input-schmitt-disable;
+			};
+		};
+
+		/*
+		 * The NPU and its on-chip memory (OCM): register window plus the
+		 * edge-triggered done and error lines of the one NPU. No clocks or
+		 * resets: they live in the NPU's own block at +0x90000, which its
+		 * driver programs; its PLL taps and aclk_nn_top are not registered
+		 * by the clock driver, so nothing gates them off.
+		 *
+		 * Disabled by default: the driver uses all of the OCM, and under the
+		 * 32-bit chain the SPL parks CPU1 there (from 0x3000400). The 64-bit
+		 * boards enable it: BL31 keeps CPU1 in DRAM.
+		 */
+		npu: npu@3800000 {
+			compatible = "axera,ax620e-npu";
+			reg = <0x03800000 0xb0000>, <0x03000000 0x280000>;
+			reg-names = "regs", "ocm";
+			interrupts = <GIC_SPI 38 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 42 IRQ_TYPE_EDGE_RISING>;
+			interrupt-names = "done", "error";
+			status = "disabled";
+		};
+
+		gpio0: gpio@4800000 {
+			compatible = "axera,ax620e-gpio";
+			reg = <0x04800000 0x400>;
+			interrupts = <GIC_SPI 114 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX620E_CLK_GPIO0_EB>, <&periph_clk AX620E_PCLK_GPIO0_EB>;
+			clock-names = "gpio", "apb";
+			resets = <&periph_clk AX620E_RST_PERIPH_GPIO0_PRST>,
+				 <&periph_clk AX620E_RST_PERIPH_GPIO0>;
+			reset-names = "apb", "gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			gpio-ranges = <&pinctrl 0 0 11>, <&pinctrl 11 79 4>, <&pinctrl 15 87 4>,
+				      <&pinctrl 19 62 1>, <&pinctrl 20 60 1>, <&pinctrl 21 92 3>,
+				      <&pinctrl 24 11 8>;
+		};
+
+		gpio1: gpio@4801000 {
+			compatible = "axera,ax620e-gpio";
+			reg = <0x04801000 0x400>;
+			interrupts = <GIC_SPI 115 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX620E_CLK_GPIO1_EB>, <&periph_clk AX620E_PCLK_GPIO1_EB>;
+			clock-names = "gpio", "apb";
+			resets = <&periph_clk AX620E_RST_PERIPH_GPIO1_PRST>,
+				 <&periph_clk AX620E_RST_PERIPH_GPIO1>;
+			reset-names = "apb", "gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			gpio-ranges = <&pinctrl 0 19 4>, <&pinctrl 4 95 4>, <&pinctrl 8 23 4>,
+				      <&pinctrl 12 33 12>, <&pinctrl 24 27 6>, <&pinctrl 30 63 2>;
+		};
+
+		gpio2: gpio@6000000 {
+			compatible = "axera,ax620e-gpio";
+			reg = <0x06000000 0x400>;
+			interrupts = <GIC_SPI 116 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX620E_CLK_GPIO2_EB>, <&periph_clk AX620E_PCLK_GPIO2_EB>;
+			clock-names = "gpio", "apb";
+			resets = <&periph_clk AX620E_RST_PERIPH_GPIO2_PRST>,
+				 <&periph_clk AX620E_RST_PERIPH_GPIO2>;
+			reset-names = "apb", "gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			gpio-ranges = <&pinctrl 0 65 4>, <&pinctrl 4 45 6>, <&pinctrl 10 69 10>,
+				      <&pinctrl 20 56 1>, <&pinctrl 21 54 1>, <&pinctrl 22 55 1>,
+				      <&pinctrl 23 52 1>, <&pinctrl 24 51 1>, <&pinctrl 25 53 1>,
+				      <&pinctrl 26 57 3>, <&pinctrl 29 61 1>;
+		};
+
+		gpio3: gpio@6001000 {
+			compatible = "axera,ax620e-gpio";
+			reg = <0x06001000 0x400>;
+			interrupts = <GIC_SPI 117 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX620E_CLK_GPIO3_EB>, <&periph_clk AX620E_PCLK_GPIO3_EB>;
+			clock-names = "gpio", "apb";
+			resets = <&periph_clk AX620E_RST_PERIPH_GPIO3_PRST>,
+				 <&periph_clk AX620E_RST_PERIPH_GPIO3>;
+			reset-names = "apb", "gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			gpio-ranges = <&pinctrl 1 84 3>;
+		};
+
+		/*
+		 * No interrupt. The driver adopts the dog U-Boot started, with U-Boot's
+		 * 30 s; the core pets it only with watchdog.handle_boot_enabled=1, else
+		 * userspace must.
+		 */
+		wdt0: watchdog@4840000 {
+			compatible = "axera,ax620e-wdt";
+			reg = <0x04840000 0x400>;
+			timeout-sec = <30>;
+			clocks = <&periph_clk AX620E_PCLK_WDT0_EB>, <&periph_clk AX620E_CLK_WDT0_EB>;
+			clock-names = "apb", "wdt";
+			resets = <&periph_clk AX620E_RST_PERIPH_WDT0_PRST>,
+				 <&periph_clk AX620E_RST_PERIPH_WDT0_ARST>;
+		};
+
+		/* EIP-130: the kernel owns firmware startup and hardware entropy. */
+		ce: crypto@4900000 {
+			compatible = "axera,ax620e-ce";
+			reg = <0x04900000 0x40000>, <0x02390024 0x4>;	/* engine, BACKUP0 */
+			interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI 111 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX620E_CLK_CE_CNT_EB>, <&periph_clk AX620E_ACLK_CE_EB>,
+				 <&periph_clk AX620E_PCLK_CE_EB>;
+			clock-names = "cnt", "core", "apb";
+			resets = <&periph_clk AX620E_RST_PERIPH_CE_MAIN>,
+				 <&periph_clk AX620E_RST_PERIPH_CE_CNT>,
+				 <&periph_clk AX620E_RST_PERIPH_CE_SOFT>,
+				 <&periph_clk AX620E_RST_PERIPH_CE_PRST>,
+				 <&periph_clk AX620E_RST_PERIPH_CE>;
+			axera,periph-syscon = <&periph_clk>;
+			status = "disabled";
+		};
+
+		/* The bus gates are not registered, so stay on; U-Boot leaves the resets released. */
+		sd: mmc@104e0000 {
+			compatible = "axera,ax620e-sd4hc", "cdns,sd4hc";
+			reg = <0x104e0000 0x10000>;
+			interrupts = <GIC_SPI 74 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&flash_clk AX620E_CLK_SD_CARD_EB>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&sd_pins>;
+			status = "disabled";
+		};
+
+		/* SDIO is initialized by Linux, from the 200 MHz source. */
+		sdio: mmc@104d0000 {
+			compatible = "axera,ax620e-sd4hc", "cdns,sd4hc";
+			reg = <0x104d0000 0x10000>;
+			interrupts = <GIC_SPI 73 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&flash_clk AX620E_CLK_SDIO_CARD_EB>, <&flash_clk AX620E_ACLK_SDIO_EB>,
+				 <&flash_clk AX620E_PCLK_SDIO_EB>;
+			assigned-clocks = <&flash_clk AX620E_CLK_SDIO_CARD_SEL>,
+					  <&flash_clk AX620E_CLK_SDIO_CARD_DIVN>;
+			assigned-clock-parents = <&common_clk AX620E_NPLL_400M>, <0>;
+			assigned-clock-rates = <0>, <200000000>;
+			resets = <&flash_clk AX620E_RST_FLASH_SDIO_A>, <&flash_clk AX620E_RST_FLASH_SDIO_P>,
+				 <&flash_clk AX620E_RST_FLASH_SDIO_CARD>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&sdio_pins>;
+			status = "disabled";
+		};
+
+		usb: usb@8000000 {
+			compatible = "axera,ax620e-dwc3";
+			reg = <0x08000000 0x100000>;
+			interrupts = <GIC_SPI 76 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&flash_clk AX620E_CLK_USB_REF_EB>, <&flash_clk AX620E_BUS_CLK_USB_EB>,
+				 <&flash_clk AX620E_USB_REF_ALT_CLK_EB>;
+			clock-names = "ref", "bus_early", "ref_alt";
+			resets = <&flash_clk AX620E_RST_FLASH_USB2_PHY>,
+				 <&flash_clk AX620E_RST_FLASH_USB2_VCC>;
+			axera,flash-syscon = <&flash_clk>;
+			phy_type = "utmi";
+			maximum-speed = "high-speed";
+			snps,dis-u2-freeclk-exists-quirk;
+			snps,gfladj-refclk-lpm-sel-quirk;
+			status = "disabled";
+		};
+
+		i2c0: i2c@4850000 {
+			compatible = "snps,designware-i2c";
+			reg = <0x04850000 0x400>;
+			interrupts = <GIC_SPI 135 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX620E_CLK_I2C0_EB>, <&periph_clk AX620E_PCLK_I2C0_EB>;
+			clock-names = "ref", "pclk";
+			resets = <&periph_clk AX620E_RST_PERIPH_I2C0_PRST>,
+				 <&periph_clk AX620E_RST_PERIPH_I2C0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2c0_pins>;
+			clock-frequency = <400000>;
+			i2c-sda-hold-time-ns = <500>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		/* An APB and a core reset; either one asserted holds the block. */
+		i2c1: i2c@4851000 {
+			compatible = "snps,designware-i2c";
+			reg = <0x04851000 0x400>;
+			interrupts = <GIC_SPI 136 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX620E_CLK_I2C1_EB>, <&periph_clk AX620E_PCLK_I2C1_EB>;
+			clock-names = "ref", "pclk";
+			resets = <&periph_clk AX620E_RST_PERIPH_I2C1_PRST>,
+				 <&periph_clk AX620E_RST_PERIPH_I2C1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		/*
+		 * A DesignWare APB timer block in PWM mode, four channels. The
+		 * "timer" clock is channel 2's gate: the one channel this tree drives.
+		 */
+		pwm1: pwm@6061000 {
+			compatible = "snps,dw-apb-timers-pwm2";
+			reg = <0x06061000 0x400>;
+			clocks = <&periph_clk AX620E_PCLK_PWM1_EB>, <&periph_clk AX620E_CLK_PWM12_EB>;
+			clock-names = "bus", "timer";
+			resets = <&periph_clk AX620E_RST_PERIPH_PWM1>,
+				 <&periph_clk AX620E_RST_PERIPH_PWM1_CH2>;
+			#pwm-cells = <3>;
+			status = "disabled";
+		};
+
+		/*
+		 * No DMA: the peripheral DMA engine has no driver, so transfers run
+		 * on the IRQ. No resets: the driver would take only one of its two,
+		 * and U-Boot, which draws its logo through this block, releases both.
+		 */
+		spi2: spi@6072000 {
+			compatible = "snps,dw-apb-ssi";
+			reg = <0x06072000 0x400>;
+			interrupts = <GIC_SPI 153 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX620E_CLK_SPI_M2_EB>, <&periph_clk AX620E_PCLK_SPI_M2_EB>;
+			clock-names = "ssi_clk", "pclk";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		uart3: serial@6080000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x06080000 0x400>;
+			interrupts = <GIC_SPI 121 IRQ_TYPE_LEVEL_HIGH>;
+			clock-frequency = <208000000>;
+			reg-shift = <2>;
+			reg-io-width = <4>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&uart3_pins>;
+			status = "disabled";
+		};
+
+		/* Scaler and colour converter; the CPU writes its registers, no command DMA. */
+		tdp: scaler@4405000 {
+			compatible = "axera,ax620e-tdp";
+			reg = <0x04405000 0x1000>;
+			interrupts = <GIC_SPI 99 IRQ_TYPE_LEVEL_HIGH>;
+			/*
+			 * The command-DMA pair stays clocked too: an unclocked MM read
+			 * hangs the bus.
+			 */
+			clocks = <&mm_clk AX620E_CLK_TDP_EB>, <&mm_clk AX620E_PCLK_TDP_EB>,
+				 <&mm_clk AX620E_CLK_CMD_EB>, <&mm_clk AX620E_PCLK_CMD_EB>;
+			resets = <&mm_clk AX620E_RST_MM_TDP_PRST>, <&mm_clk AX620E_RST_MM_TDP>;
+			status = "disabled";
+		};
+
+		/* VCMD command engine; the encoder core's registers sit behind it at +0x1000. */
+		jenc: video-codec@4000000 {
+			compatible = "axera,ax620e-jenc";
+			reg = <0x04000000 0x10000>;
+			interrupts = <GIC_SPI 91 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&vpu_clk AX620E_CLK_JENC_EB>;
+			resets = <&vpu_clk AX620E_RST_VPU_JENC>;
+			status = "disabled";
+		};
+	};
+};

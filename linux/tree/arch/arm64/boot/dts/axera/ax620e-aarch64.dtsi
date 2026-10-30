@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright (c) 2026, GembaHive, Inc.
+ */
+/*
+ * The AX620E's CPUs and timer under a 64-bit kernel, as changes to
+ * arm/axera/ax620e-aarch32.dtsi, which the board's DT includes first.
+ * TF-A's BL31 starts CPUs (PSCI) and sets CNTFRQ; it holds CPU1 in its own
+ * pen, so the secondary-boot-reg mechanism is unused.
+ */
+
+&cpu0 {
+	enable-method = "psci";
+};
+
+&cpu1 {
+	enable-method = "psci";
+	/delete-property/ secondary-boot-reg;
+};
+
+/ {
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	/* BL31's FW_CONFIRM SiP call, made once at boot. */
+	fw-confirm {
+		compatible = "axera,ax620e-fw";
+	};
+
+	firmware {
+		optee {
+			compatible = "linaro,optee-tz";
+			method = "smc";
+		};
+	};
+
+	timer {
+		/delete-property/ arm,cpu-registers-not-fw-configured;
+	};
+
+	reserved-memory {
+		/* The secure world: switch stub, BL31 and OP-TEE, loaded by the boot loader. */
+		secure@40000000 {
+			reg = <0x40000000 0x200000>;
+			no-map;
+		};
+	};
+};

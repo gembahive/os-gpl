@@ -1,0 +1,2 @@
+# NixOS modules set options as flat dotted paths (`boot.a = ...; boot.b = ...;`), as the NixOS manual does.
+disabled = [ "repeated_keys" ]

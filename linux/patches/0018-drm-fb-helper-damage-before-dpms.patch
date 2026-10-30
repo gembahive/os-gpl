@@ -1,0 +1,17 @@
+drm/fb-helper: copy pending fbdev writes into the client buffer before a DPMS
+change. Enabling the pipe flushes that buffer to the display, and a write
+made just before FBIOBLANK may still be queued in the damage worker, which
+waits on the helper's lock that the modeset holds, so the display would
+show the stale buffer until the worker runs.
+
+--- a/drivers/gpu/drm/drm_fb_helper.c
++++ b/drivers/gpu/drm/drm_fb_helper.c
+@@ -308,6 +308,8 @@
+ {
+ 	struct drm_fb_helper *fb_helper = info->par;
+ 
++	/* Enabling flushes the client buffer, so pending writes land in it first. */
++	flush_work(&fb_helper->damage_work);
+ 	mutex_lock(&fb_helper->lock);
+ 	drm_client_modeset_dpms(&fb_helper->client, dpms_mode);
+ 	mutex_unlock(&fb_helper->lock);
