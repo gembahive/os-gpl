@@ -188,6 +188,10 @@ let
       # keep their flags.
       w() { k O="$W" W=1 "$@"; }
       w ${board}_defconfig
+      # The directories of our sources: arm64's arch only, the vendor Wi-Fi driver apart.
+      dirs=$(cd ${./tree} && find . \( -path ./drivers/net/wireless/aic8800 -o -path './arch/*' ! -path './arch/arm64' \
+          ! -path './arch/arm64/*' \) -prune -o -name '*.[cS]' -print | sed 's|^\./||; s|/[^/]*$|/|' | sort -u)
+      [ -n "$dirs" ] || { echo "no sources of ours to build with W=1"; exit 1; }
       w KCFLAGS=-Werror $dirs ${dtb} 2>&1 | tee $out/w1.log
       if grep -qi warning $out/w1.log; then echo "W=1 warnings (above)"; exit 1; fi
       # Vendor sources keep their own warning report.
