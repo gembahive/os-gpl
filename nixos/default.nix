@@ -10,8 +10,9 @@ let
   gplPkgs = {
     # systemd without what nothing here uses: TPM2, FIDO2, home directories, machines and containers, portable
     # services, sysupdate, image imports, the journal's remote upload, the hardware database, the virtual console,
-    # disk encryption and repart, kexec, password quality checks and archive support. QR codes stay: the initrd
-    # lists systemd-bsod.
+    # disk encryption and repart, kexec, password quality checks, archive support, core dumps (the kernel's
+    # core_pattern discards them) and BPF programs (no unit restricts file systems, interfaces or socket binds).
+    # QR codes stay: the initrd lists systemd-bsod.
     systemd = pkgs.systemd.override {
       withTpm2Tss = false;
       withFido2 = false;
@@ -30,6 +31,8 @@ let
       withKexectools = false;
       withPasswordQuality = false;
       withLibarchive = false;
+      withCoredump = false;
+      withLibBPF = false;
       # The util-linux the system has anyway, not a second, minimal one for mount, fsck and sulogin.
       inherit (pkgs) util-linux;
     };
@@ -51,11 +54,13 @@ let
       configureFlags = o.configureFlags ++ [ "--disable-nts" ];
     });
 
-    # Without tc's xtables actions and arpd (Berkeley DB).
+    # Without tc's xtables actions, arpd (Berkeley DB) and BPF program loading (elfutils, libbpf).
     iproute2 = pkgs.iproute2.overrideAttrs (o: {
       buildInputs = lib.subtractLists [
         pkgs.db
         pkgs.iptables
+        pkgs.elfutils
+        pkgs.libbpf
       ] o.buildInputs;
     });
 
@@ -71,6 +76,7 @@ in
   _module.args = { inherit gplPkgs; };
 
   systemd.package = gplPkgs.systemd;
+  systemd.coredump.enable = false;
   # NixOS links these tmpfiles whether or not systemd was built with portabled and nspawn; masked, as the links
   # dangle.
   environment.etc."tmpfiles.d/portables.conf".source = "/dev/null";
