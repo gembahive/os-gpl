@@ -1,0 +1,55 @@
+name: Source release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      # The device's packages are aarch64; build them under emulation.
+      - uses: docker/setup-qemu-action@v3
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: extra-platforms = aarch64-linux
+
+      - name: Collect sources
+        run: |
+          d="os-gpl-${GITHUB_SHA::7}"
+          git archive --prefix="$d/" HEAD | tar -x
+          mkdir -p "$d/sources/upstream"
+
+          # Tarballs pinned in upstream.nix (kernel, U-Boot, fw_printenv, BusyBox).
+          for p in $(nix build --no-link --print-out-paths .#linux-src .#u-boot-src .#libubootenv-src \
+              .#zlib-src .#busybox-dsc .#busybox-orig .#busybox-debian); do
+            cp "$p" "$d/sources/upstream/${p#/nix/store/*-}"
+          done
+
+          # Every package in the NixOS image: its source, nixpkgs' patches and build scripts.
+          nix build .#toplevel
+          nix-store -qR result | xargs nix-store -q --valid-derivers | sort -u \
+            | xargs nix derivation show > drvs.json
+          jq -r '.derivations[].inputs.drvs | keys[] | "/nix/store/\(.)"' drvs.json | sort -u \
+            | xargs nix derivation show > inputs.json
+          jq -r --slurpfile i inputs.json '.derivations[] | .name as $n
+            | (.inputs.srcs[], (.inputs.drvs | keys[] | select($i[0].derivations[.].outputs.out.hash) | $i[0].derivations[.].env.out))
+            | "\($n) /nix/store/\(ltrimstr("/nix/store/"))"' drvs.json | sort -u |
+          while read -r n p; do
+            nix-store -r "$p" > /dev/null
+            mkdir -p "$d/sources/$n"
+            cp -r --no-preserve=mode "$p" "$d/sources/$n/${p#/nix/store/*-}"
+          done
+
+          XZ_OPT=-T0 tar -cJf "$d.tar.xz" "$d"
+          ls -lh "$d.tar.xz"
+
+      - name: Release
+        run: gh release create "source-${GITHUB_SHA::7}" os-gpl-*.tar.xz --target "$GITHUB_SHA" --notes "Source for $GITHUB_SHA"
+        env:
+          GH_TOKEN: ${{ github.token }}
