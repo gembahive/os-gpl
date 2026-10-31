@@ -11,7 +11,8 @@ let
     # systemd without what nothing here uses: TPM2, FIDO2, home directories, machines and containers, portable
     # services, sysupdate, image imports, the journal's remote upload, the hardware database, the virtual console,
     # disk encryption and repart, kexec, password quality checks, archive support, core dumps (the kernel's
-    # core_pattern discards them) and BPF programs (no unit restricts file systems, interfaces or socket binds).
+    # core_pattern discards them), BPF programs (no unit restricts file systems, interfaces or socket binds),
+    # AppArmor (not in the kernel), the journal's sealing keys (gcrypt) and internationalised host names.
     # QR codes stay: the initrd lists systemd-bsod.
     systemd = pkgs.systemd.override {
       withTpm2Tss = false;
@@ -33,6 +34,9 @@ let
       withLibarchive = false;
       withCoredump = false;
       withLibBPF = false;
+      withApparmor = false;
+      withGcrypt = false;
+      withLibidn2 = false;
       # The util-linux the system has anyway, not a second, minimal one for mount, fsck and sulogin.
       inherit (pkgs) util-linux;
     };
